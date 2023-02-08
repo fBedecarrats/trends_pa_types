@@ -1,49 +1,243 @@
 ---
 title: "Trends in protected area types by period of establishment"
-author: "Florent Bédécarrats"
-format: html
+author: "Florent Bédécarrats, Stéphanie Carrière, Céline Fromont ¿et co-auteurs?"
+format: 
+  html:
+    message: false
+    warning: false
+    error: false
+    code-fold: true
+    output-file: index.html
+    toc: true
 editor: visual
 abstract: |
-  This is a quick analysis aiming at computing the evolution of protected area 
-  IUCN types depending on the period of creation of the protected areas. 
+  We analyse the world database on protected areas to assess if the 
+  relative importance of multipurpose protected areas has evolved compared to 
+  strictly protected areas. We show very different trends whether we focus on the 
+  number of entities or the spatial coverage of protected areas. During the last
+  decades, there has been an increasing number of smaller strictly protected 
+  areas, and a decreasing number of larger multipurpose protected areas. 
 
+editor_options: 
+  chunk_output_type: console
+bibliography: references.bib
 ---
-
 
 # Objective
 
-We argue that the share of multi-purpose protected areas is increasing, compared to protected areas pursuing only conservation objectives.
-This document is designed to be verificable and reproducible. It is written in quarto and uses R code. All the data processing can be viewed by clicking on the "code" buttons.
+In the framework of a paper in preparation [@fromont2023], we want to know if the share of multi-purpose protected areas is increasing, compared to protected areas pursuing only conservation objectives. This document is designed to provide a verifiable and reproducible answer to this question. It is written in [quarto](https://quarto.org/) and uses R code. All the data processing can be viewed by clicking on the "code" buttons.
 
 ```{r}
 # Install required libraries.
-
+# Specified the used packages
+required_packages <- c("tidyverse", "aws.s3", "wdpar", "sf", "gt", "rgee") 
+# Identify which are missing
+missing <- !(required_packages %in% installed.packages())
+# Install those
+if(any(missing)) install.packages(required_packages[missing], 
+                                  repos = "https://cran.irsn.fr/")
+# Load libraries
+library(tidyverse)
+library(aws.s3)
+library(wdpar)
+library(sf)
+library(gt)
+# Turn on/off scientific notations
+options(scipen = 0) #999 for off
 ```
-
 
 # Data
 
-We use the extension wdpar to fetch the World Database on Protected Areas from [the protected planet portal](https://www.protectedplanet.net/en). It is the version updated in January 2022.
+We use the extension wdpar to fetch the World Database on Protected Areas from [the protected planet portal](https://www.protectedplanet.net/en). It is the version updated in February 2022. We only keep the areas for which a spatial area is known, that is not including the protected area for which only one point in space is reported.
 
 ```{r}
+#| output: false
 
+# we also get the WDPA version from Google Earth Engine that includes areas 
+save_object(object = "Replication_wolf/WDPA_no_geom_Feb2022.csv",
+            file = "WDPA_no_geom_Feb2022.csv",
+            bucket = "fbedecarrats",
+            region = "")
 
-df_PAs <- 
-  aws.s3::s3read_using(
-    FUN = data.table::fread,
-    # Mettre les options de FUN ici
-    object = "/FILOSOFI/2016/FILOSOFI_COM.csv",
-    bucket = "donnees-insee",
-    opts = list("region" = "")
-  )
+# # For first download, use this code: 
+# wdpa <- wdpa_fetch("global", download_dir = ".")
+# # to save to S3 this one:
+# put_object(file = "WDPA_Jan2023_Public.gdb.zip",
+#            object = "Replication_wolf/WDPA_Jan2023_Public.gdb.zip",
+#            bucket = "fbedecarrats",
+#            region = "")
+# # for more info on the use of S3 in this context, see: 
+# # https://www.book.utilitr.org/01_r_insee/fiche_utiliser_rstudio_sspcloud
+
+# Read the data
+# wdpa <- wdpa_read("WDPA_Jan2023_Public.gdb.zip")
+# This one was generated from Google Earth Engine to get the GIS area
+wdpa_gee <- read_csv("WDPA_no_geom_Feb2022.csv")
 ```
 
+As of this date, the WDPA includes information on `rnrow(wdpa_gee)` protected areas. A well-formatted description of the fields available can be found [on this webpage](https://developers.google.com/earth-engine/datasets/catalog/WCMC_WDPA_current_polygons).
 
 # Methods
 
+We keep only terrestrial protected areas and discard marine or coastal protected areas. Following Nelson et al. [-@nelson2011], we classify as strict protection the protected areas with a status corresponding to IUCN classes I through IV, and as multipurpose the protected areas with status corresponding to IUCN classes V and VI. 
 
+For now, we have not figured out how to specify indigenous stewardship, so we leave it among the Unknown.
+
+```{r}
+# Drop marine, compute decade
+wdpa2 <- wdpa_gee %>%
+  filter(MARINE == "0") %>% #0: 100% terrestrial, 1: both, 2: 100% marine
+  mutate(decade = STATUS_YR - (STATUS_YR %% 10),
+         decade = case_when(
+           decade == 0 ~ "Unknown",
+           decade >0 & decade <= 1950 ~ "Before 1960",
+           .default = paste(decade, decade+9, sep = "-")),
+         type = ifelse(IUCN_CAT %in% c("Ia", "Ib", "II", "III", "IV"), "Strict",
+                       ifelse(IUCN_CAT %in% c("V", "VI"), "Nonstrict", 
+                              "Unknown")))
+# Organize the order of display of decades, starting with Unnkown, then Before
+decades <- wdpa2 %>%
+  pluck("decade") %>%
+  unique() %>%
+  sort()
+order_decades <- c("Unknown", "Before 1960", str_subset(decades, "^[0-9]")) 
+wdpa2 <- wdpa2 %>%
+  mutate(decade = factor(decade, levels = order_decades))
+```
+
+After this filtering, we have `r nrow(wdpa2)` protected areas for the analysis.
 
 # Results
 
-# Discussion
+## Relative importance of status in number of PAs
 
+@fig-n-pas represents the evolution of strict vs. multipurpose categories according to the year of assignment of the conservation status of PAs.
+
+```{r fig_n_pas}
+#| label: fig-n-pas
+#| fig-cap: "Number of terrestrial protected areas by status and decade of creation"
+
+# Descriptive statistics
+patype_decade <- wdpa2 %>%
+  group_by(decade, type) %>%
+  summarise(n = n(),
+            area = sum(GIS_AREA, na.rm = TRUE),
+            mean_area = mean(GIS_AREA, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(type = factor(type, levels = c("Strict", "Nonstrict", "Unknown")))
+patype_decade %>%
+  ggplot(aes(x = decade, y = n, fill = type)) +
+  geom_col() +
+  xlab("Decade of PA status") + 
+  ylab("Number of PAs receiving status") +
+  labs(fill = "Category of status") + 
+  scale_fill_discrete(
+    labels = c("Strict" = "Strict (IUCN I to IV)",
+               "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+The @fig-n-pas shows that the total number of PAs has sharply increased since 2000. However, the relative importance of multipurpose conservation status doesn't seem to increase. 
+
+```{r table_n_pas}
+#| label: tab-n-pas
+#| tbl-cap: "Area of PAs by status category and decade of creation"
+
+# Stats in number of PAs
+prop_patype_decade <- patype_decade %>%
+  select(-area, -mean_area) %>%
+  pivot_wider(names_from = type, values_from = n) %>%
+  mutate(total = Nonstrict + Strict + Unknown,
+         known_status = Nonstrict + Strict,
+         perc_nonstrict = round(Nonstrict / known_status * 100, 1))
+# Let's re-order colunms
+prop_patype_decade %>%
+  rename(`Decade of status assignment` = decade,
+         `Total number of PAs created` = total,
+         `Number of PAs whith a known status` = known_status,
+         `% of multipurpose among known status` = perc_nonstrict) %>%
+  gt()
+  
+  
+```
+
+According to the world database on protected areas, the proportion of new protected areas with a multipurpose status has reduced, from `r filter(prop_patype_decade, decade == "1960-1969") %>% pluck("perc_nonstrict")`% in the 1960s to `r filter(prop_patype_decade, decade == "2010-2019") %>% pluck("perc_nonstrict")`% in the 2010s. It has been even lower (`r filter(prop_patype_decade, decade == "2020-2029") %>% pluck("perc_nonstrict")`%) in the first years of the current decade. 
+
+We must, however, strikeout that the decade of creation is unknown for `r filter(prop_patype_decade, decade == "Unknown") %>% pluck("total")` out of `r nrow(wdpa2)` protected area ( `r round(filter(prop_patype_decade, decade == "Unknown") %>% pluck("total")/ nrow(wdpa2)*100, 1)`%). There is a large proportion of multipurpose status among the protected areas for which the creation date is unknown (`r filter(prop_patype_decade, decade == "Unknown") %>% pluck("perc_nonstrict")`%). The status of the protected area is unknown for `r sum(prop_patype_decade$Unknown)` protected areas out of `r nrow(wdpa2)` protected areas (`r round(sum(prop_patype_decade$Unknown)/nrow(wdpa2)*100, 1)`%). 
+
+## Relative importance of status in PA spatial extent
+
+We now perform the same analysis, but instead of counting the number of PAs, we sum their area. The area newly covered by type of status is represented in @fig-area-pas.
+
+```{r fig_area_pas}
+#| label: fig-area-pas
+#| fig-cap: "Area of terrestrial protected areas by status and decade of creation"
+
+patype_decade %>%
+  ggplot(aes(x = decade, y = area, fill = type)) +
+  geom_col() +
+  xlab("Decade of PA status") + 
+  ylab(bquote('Area of PAs receiving status in km'^2)) +
+  labs(fill = "Category of status") + 
+  scale_fill_discrete(
+    labels = c("Strict" = "Strict (IUCN I to IV)",
+               "Nonstrict" = "Multipurpose (IUCN V and VI)")) + 
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+The trend that appears in @fig-area-pas is quite different than the one we saw in @fig-n-pas: when accounting for their total areas, multi-purpose protected areas seem to represent an increasing proportion among newly created protected areas.
+
+We now compute the precise area estimates and their relative importance.
+
+```{r table_area_pas}
+#| label: tab-area-pas
+#| tbl-cap: "Area of terrestrial protected areas by status and decade of creation"
+
+# Stats in number of PAs
+prop_patype_decade_area <- patype_decade %>%
+  select(-n, -mean_area) %>%
+  pivot_wider(names_from = type, values_from = area) %>%
+  mutate(total = Nonstrict + Strict + Unknown,
+         known_status = Nonstrict + Strict,
+         perc_nonstrict = round(Nonstrict / known_status * 100, 1))
+# Let's re-order colunms
+prop_patype_decade_area %>%
+  rename(`Decade of status assignment` = decade,
+         `Total area of PAs created` = total,
+         `Area of PAs whith a known status` = known_status,
+         `% of multipurpose among known status` = perc_nonstrict) %>%
+  gt()
+```
+
+According to the world database on protected areas, the total spatial extent of new protected areas with a multipurpose status has increased, from `r filter(prop_patype_decade_area, decade == "1960-1969") %>% pluck("perc_nonstrict")`% in the 1960s to `r filter(prop_patype_decade_area, decade == "2000-2009") %>% pluck("perc_nonstrict")`% in the 2000s and slightly decreased in the 2010s to `r filter(prop_patype_decade_area, decade == "2010-2019") %>% pluck("perc_nonstrict")`%. 
+
+## Average size of protected areas
+
+The two previous figures suggest very different trends in terms of average size of protected areas depending on their status. We verify this with @fig-avg-area.
+
+```{r}
+#| label: fig-avg-area
+#| fig-cap: "Average area of terrestrial protected areas by status and decade of creation"
+
+patype_decade %>%
+  ggplot(aes(x = decade, y = mean_area, group = type, col = type)) +
+  geom_point() +
+  geom_line() +
+  xlab("Decade of PA status") + 
+  ylab(bquote('Average area of PAs in km'^2)) +
+  labs(col = "Category of status") + 
+  scale_fill_discrete(
+    labels = c("Strict" = "Strict (IUCN I to IV)",
+               "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
+```
+
+@fig-avg-area shows that the area of PAs with a strict status has decreased over time, while the area of PAs with a multipurpose status has increased over time.
+
+# Conclusion
+
+The information available in the world database on protected areas indicates that **in terms of number of administrative entities**, the proportion protected areas with a multi-purpose status tends to decrease over the last decades. However, **in terms of spatial extent of these entities**,the proportion of protected area with a multi-purpose status tends to increase over the same period. In other words, countries create an increasing number of smaller strictly protected areas, and they create a decreasing number of larger multi-purpose protected areas. 
+
+This conclusion, however, could be undermined by the substantial proportion of missing information on the creation date and status of protected areas in the database of reference. 
+
+# References
