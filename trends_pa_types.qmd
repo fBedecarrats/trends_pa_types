@@ -1,0 +1,49 @@
+---
+title: "Trends in protected area types by period of establishment"
+author: "Florent Bédécarrats"
+format: html
+editor: visual
+abstract: |
+  This is a quick analysis aiming at computing the evolution of protected area 
+  IUCN types depending on the period of creation of the protected areas. 
+
+---
+
+
+# Objective
+
+We argue that the share of multi-purpose protected areas is increasing, compared to protected areas pursuing only conservation objectives.
+This document is designed to be verificable and reproducible. It is written in quarto and uses R code. All the data processing can be viewed by clicking on the "code" buttons.
+
+```{r}
+# Install required libraries.
+
+```
+
+
+# Data
+
+We use the extension wdpar to fetch the World Database on Protected Areas from [the protected planet portal](https://www.protectedplanet.net/en). It is the version updated in January 2022.
+
+```{r}
+
+
+df_PAs <- 
+  aws.s3::s3read_using(
+    FUN = data.table::fread,
+    # Mettre les options de FUN ici
+    object = "/FILOSOFI/2016/FILOSOFI_COM.csv",
+    bucket = "donnees-insee",
+    opts = list("region" = "")
+  )
+```
+
+
+# Methods
+
+
+
+# Results
+
+# Discussion
+
