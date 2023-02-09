@@ -96,8 +96,9 @@ wdpa2 <- wdpa_gee %>%
            decade >0 & decade <= 1950 ~ "Before 1960",
            .default = paste(decade, decade+9, sep = "-")),
          type = ifelse(IUCN_CAT %in% c("Ia", "Ib", "II", "III"), "Strict",
-                       ifelse(IUCN_CAT %in% c("IV", "V", "VI"), "Nonstrict", 
-                              "Unknown")))
+                       ifelse(IUCN_CAT == "IV", "IV",
+                              ifelse(IUCN_CAT %in% c("V", "VI"), "Nonstrict", 
+                              "Unknown"))))
 # Organize the order of display of decades, starting with Unnkown, then Before
 decades <- wdpa2 %>%
   pluck("decade") %>%
@@ -127,7 +128,7 @@ patype_decade <- wdpa2 %>%
             area = sum(GIS_AREA, na.rm = TRUE),
             mean_area = mean(GIS_AREA, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(type = factor(type, levels = c("Strict", "Nonstrict", "Unknown")))
+  mutate(type = factor(type, levels = c("Strict", "IV", "Nonstrict", "Unknown")))
 patype_decade %>%
   ggplot(aes(x = decade, y = n, fill = type)) +
   geom_col() +
@@ -135,7 +136,8 @@ patype_decade %>%
   ylab("Number of PAs receiving status") +
   labs(fill = "Category of status") + 
   scale_fill_discrete(
-    labels = c("Strict" = "Strict (IUCN I to IV)",
+    labels = c("Strict" = "Strict (IUCN I to III)",
+               "IV" = "IUCN IV",
                "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
@@ -150,18 +152,47 @@ The @fig-n-pas shows that the total number of PAs has sharply increased since 20
 prop_patype_decade <- patype_decade %>%
   select(-area, -mean_area) %>%
   pivot_wider(names_from = type, values_from = n) %>%
-  mutate(total = Nonstrict + Strict + Unknown,
-         known_status = Nonstrict + Strict,
+  mutate(total = Nonstrict + IV + Strict + Unknown,
+         known_status = Nonstrict + IV + Strict,
+         perc_strict = round(Strict / known_status * 100, 1),
+         perc_iv = round(IV / known_status * 100, 1),
          perc_nonstrict = round(Nonstrict / known_status * 100, 1))
-# Let's re-order colunms
+
 prop_patype_decade %>%
   rename(`Decade of status assignment` = decade,
          `Total number of PAs created` = total,
          `Number of PAs whith a known status` = known_status,
+         `% of strict among known status` = perc_strict,
+         `% of IV among known status` = perc_iv,
          `% of multipurpose among known status` = perc_nonstrict) %>%
   gt()
-  
-  
+```
+
+For readability purpose, we present the proportions displayed in the three last column of @tab-n-pas in a figure.
+
+```{r}
+#| label: fig-prop-pas-n
+#| fig-cap: "Proportion of terrestrial PAs by status and decade of creation"
+
+prop_patype_decade %>%
+  select(`Decade of status assignment` = decade,
+         `% of strict among known status` = perc_strict,
+         `% of IV among known status` = perc_iv,
+         `% of multipurpose among known status` = perc_nonstrict) %>%
+  pivot_longer(-`Decade of status assignment`, names_to = "IUCN category", 
+               values_to = "Proportion") %>%
+  mutate(`IUCN category` = factor(`IUCN category`, levels = c(
+    "% of strict among known status",
+    "% of IV among known status",
+    "% of multipurpose among known status"))) %>%
+ggplot(aes(y = Proportion, x = `Decade of status assignment`, 
+           group = `IUCN category`, col = `IUCN category`)) +
+  geom_point() +
+  geom_line() +
+  xlab("Decade of PA status") +
+  ylab("Number of PAs receiving status") +
+  labs(col = "Category of status") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
 
 According to the world database on protected areas, the proportion of new protected areas with a multipurpose status has reduced, from `r filter(prop_patype_decade, decade == "1960-1969") %>% pluck("perc_nonstrict")`% in the 1960s to `r filter(prop_patype_decade, decade == "2010-2019") %>% pluck("perc_nonstrict")`% in the 2010s. It has been even lower (`r filter(prop_patype_decade, decade == "2020-2029") %>% pluck("perc_nonstrict")`%) in the first years of the current decade.
@@ -182,8 +213,9 @@ patype_decade %>%
   xlab("Decade of PA status") + 
   ylab(bquote('Area of PAs receiving status in km'^2)) +
   labs(fill = "Category of status") + 
-  scale_fill_discrete(
-    labels = c("Strict" = "Strict (IUCN I to IV)",
+ scale_fill_discrete(
+    labels = c("Strict" = "Strict (IUCN I to III)",
+               "IV" = "IUCN IV",
                "Nonstrict" = "Multipurpose (IUCN V and VI)")) + 
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
@@ -200,16 +232,47 @@ We now compute the precise area estimates and their relative importance.
 prop_patype_decade_area <- patype_decade %>%
   select(-n, -mean_area) %>%
   pivot_wider(names_from = type, values_from = area) %>%
-  mutate(total = Nonstrict + Strict + Unknown,
-         known_status = Nonstrict + Strict,
-         perc_nonstrict = round(Nonstrict / known_status * 100, 1))
-# Let's re-order colunms
+  mutate(total = Nonstrict + IV + Strict + Unknown,
+         known_status = Nonstrict + IV + Strict,
+         perc_strict = round(Strict / known_status * 100, 1),
+         perc_iv = round(IV / known_status * 100, 1),
+         perc_nonstrict = round(Nonstrict / known_status * 100, 1))  
+
 prop_patype_decade_area %>%
   rename(`Decade of status assignment` = decade,
-         `Total area of PAs created` = total,
+         `Total number of PAs created` = total,
          `Area of PAs whith a known status` = known_status,
+         `% of strict among known status` = perc_strict,
+         `% of IV among known status` = perc_iv,
          `% of multipurpose among known status` = perc_nonstrict) %>%
   gt()
+```
+
+The same information, in graphics:
+
+```{r}
+#| label: fig-prop-pas_area
+#| fig-cap: "Relative area of terrestrial PAs by status and decade of creation"
+
+prop_patype_decade_area %>%
+  select(`Decade of status assignment` = decade,
+         `% of strict among known status` = perc_strict,
+         `% of IV among known status` = perc_iv,
+         `% of multipurpose among known status` = perc_nonstrict) %>%
+  pivot_longer(-`Decade of status assignment`, names_to = "IUCN category", 
+               values_to = "Proportion") %>%
+  mutate(`IUCN category` = factor(`IUCN category`, levels = c(
+    "% of strict among known status",
+    "% of IV among known status",
+    "% of multipurpose among known status"))) %>%
+ggplot(aes(y = Proportion, x = `Decade of status assignment`, 
+           group = `IUCN category`, col = `IUCN category`)) +
+  geom_point() +
+  geom_line() +
+  xlab("Decade of PA status") +
+  ylab("Area of PAs receiving status") +
+  labs(col = "Category of status") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
 
 According to the world database on protected areas, the total spatial extent of new protected areas with a multipurpose status has increased, from `r filter(prop_patype_decade_area, decade == "1960-1969") %>% pluck("perc_nonstrict")`% in the 1960s to `r filter(prop_patype_decade_area, decade == "2000-2009") %>% pluck("perc_nonstrict")`% in the 2000s and slightly decreased in the 2010s to `r filter(prop_patype_decade_area, decade == "2010-2019") %>% pluck("perc_nonstrict")`%.
@@ -231,6 +294,7 @@ patype_decade %>%
   labs(col = "Category of status") + 
   scale_fill_discrete(
     labels = c("Strict" = "Strict (IUCN I to IV)",
+               "IV" = "IUCN IV",
                "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```

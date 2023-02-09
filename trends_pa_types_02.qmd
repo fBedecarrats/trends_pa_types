@@ -95,9 +95,7 @@ wdpa2 <- wdpa_gee %>%
            decade == 0 ~ "Unknown",
            decade >0 & decade <= 1950 ~ "Before 1960",
            .default = paste(decade, decade+9, sep = "-")),
-         type = ifelse(IUCN_CAT %in% c("Ia", "Ib", "II", "III"), "Strict",
-                       ifelse(IUCN_CAT %in% c("IV", "V", "VI"), "Nonstrict", 
-                              "Unknown")))
+         type = IUCN_CAT)
 # Organize the order of display of decades, starting with Unnkown, then Before
 decades <- wdpa2 %>%
   pluck("decade") %>%
@@ -126,17 +124,17 @@ patype_decade <- wdpa2 %>%
   summarise(n = n(),
             area = sum(GIS_AREA, na.rm = TRUE),
             mean_area = mean(GIS_AREA, na.rm = TRUE)) %>%
-  ungroup() %>%
-  mutate(type = factor(type, levels = c("Strict", "Nonstrict", "Unknown")))
+  ungroup() # %>%
+ # mutate(type = factor(type, levels = c("Strict", "Nonstrict", "Unknown")))
 patype_decade %>%
   ggplot(aes(x = decade, y = n, fill = type)) +
   geom_col() +
   xlab("Decade of PA status") + 
   ylab("Number of PAs receiving status") +
   labs(fill = "Category of status") + 
-  scale_fill_discrete(
-    labels = c("Strict" = "Strict (IUCN I to IV)",
-               "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
+  # scale_fill_discrete(
+  #   labels = c("Strict" = "Strict (IUCN I to IV)",
+  #              "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
 
@@ -150,8 +148,8 @@ The @fig-n-pas shows that the total number of PAs has sharply increased since 20
 prop_patype_decade <- patype_decade %>%
   select(-area, -mean_area) %>%
   pivot_wider(names_from = type, values_from = n) %>%
-  mutate(total = Nonstrict + Strict + Unknown,
-         known_status = Nonstrict + Strict,
+  mutate(total = rowSums(),
+         known_status = total - Unknown,
          perc_nonstrict = round(Nonstrict / known_status * 100, 1))
 # Let's re-order colunms
 prop_patype_decade %>%
@@ -164,9 +162,7 @@ prop_patype_decade %>%
   
 ```
 
-According to the world database on protected areas, the proportion of new protected areas with a multipurpose status has reduced, from `r filter(prop_patype_decade, decade == "1960-1969") %>% pluck("perc_nonstrict")`% in the 1960s to `r filter(prop_patype_decade, decade == "2010-2019") %>% pluck("perc_nonstrict")`% in the 2010s. It has been even lower (`r filter(prop_patype_decade, decade == "2020-2029") %>% pluck("perc_nonstrict")`%) in the first years of the current decade.
 
-We must, however, strikeout that the decade of creation is unknown for `r filter(prop_patype_decade, decade == "Unknown") %>% pluck("total")` out of `r nrow(wdpa2)` protected area ( `r round(filter(prop_patype_decade, decade == "Unknown") %>% pluck("total")/ nrow(wdpa2)*100, 1)`%). There is a large proportion of multipurpose status among the protected areas for which the creation date is unknown (`r filter(prop_patype_decade, decade == "Unknown") %>% pluck("perc_nonstrict")`%). The status of the protected area is unknown for `r sum(prop_patype_decade$Unknown)` protected areas out of `r nrow(wdpa2)` protected areas (`r round(sum(prop_patype_decade$Unknown)/nrow(wdpa2)*100, 1)`%).
 
 ## Relative importance of status in PA spatial extent
 
@@ -182,9 +178,9 @@ patype_decade %>%
   xlab("Decade of PA status") + 
   ylab(bquote('Area of PAs receiving status in km'^2)) +
   labs(fill = "Category of status") + 
-  scale_fill_discrete(
-    labels = c("Strict" = "Strict (IUCN I to IV)",
-               "Nonstrict" = "Multipurpose (IUCN V and VI)")) + 
+  # scale_fill_discrete(
+  #   labels = c("Strict" = "Strict (IUCN I to IV)",
+  #              "Nonstrict" = "Multipurpose (IUCN V and VI)")) + 
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
 
@@ -229,9 +225,9 @@ patype_decade %>%
   xlab("Decade of PA status") + 
   ylab(bquote('Average area of PAs in km'^2)) +
   labs(col = "Category of status") + 
-  scale_fill_discrete(
-    labels = c("Strict" = "Strict (IUCN I to IV)",
-               "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
+  # scale_fill_discrete(
+  #   labels = c("Strict" = "Strict (IUCN I to IV)",
+  #              "Nonstrict" = "Multipurpose (IUCN V and VI)")) +
   theme(axis.text.x = element_text(angle = 45, hjust=1))
 ```
 
