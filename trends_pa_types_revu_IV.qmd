@@ -110,9 +110,7 @@ Adding to this classification, we share Ledberger [-@leberger2020] analysis that
 
 We consider that Lebergers et al. results [-@leberger2020] convincingly make the case to group I to III. We find out however that vivid debates focused on the category IV definition and revision [@leroux2010], so keep IV separated in our analysis, its purpose and criteria are different from V and VI[^1].
 
-[^1]: 
-
-    From the literature, we could even consider also separating III in a separate category, to have 3 classes: I-II, III, IV and V-VI.
+[^1]: From the literature, we could even consider also separating III in a separate category, to have 3 classes: I-II, III, IV and V-VI.
 
 ```{r}
 # Drop marine, compute decade

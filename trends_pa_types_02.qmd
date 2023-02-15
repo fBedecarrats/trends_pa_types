@@ -162,8 +162,6 @@ prop_patype_decade %>%
   
 ```
 
-
-
 ## Relative importance of status in PA spatial extent
 
 We now perform the same analysis, but instead of counting the number of PAs, we sum their area. The area newly covered by type of status is represented in @fig-area-pas.
