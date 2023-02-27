@@ -1,0 +1,140 @@
+---
+title: "Trends in protected area types by period of establishment"
+author: "Florent Bédécarrats, Stéphanie Carrière, Céline Fromont ¿et co-auteurs?"
+format: 
+  docx:
+    message: false
+    warning: false
+    error: false
+    echo: false
+  html:
+    message: false
+    warning: false
+    error: false
+    code-fold: true
+    toc: true
+editor: visual
+abstract: |
+  We compute simple statistics on the database on Protected Areas Management 
+  Evaluations (DB-PAME) to assess the prevalence of METT and RAPPAM methods among 
+  other PAME methods. We show that METT and RAPPAM are very common in low and middle
+  income countries, but rare in high income countries.
+editor_options: 
+  chunk_output_type: console
+bibliography: references.bib
+---
+
+## Objective
+
+In the framework of a paper in preparation [@fromont2023], we want to assess the prevalence of METT and RAPPAM methodologies among PAMEs. This document is designed to provide a verifiable and reproducible answer to this question. It is written in [quarto](https://quarto.org/) and uses R code. All the data processing can be viewed by clicking on the "code" buttons in the html version or in the code blocks in the Word or PDF versions.
+
+```{r}
+library(tidyverse, quietly = TRUE)
+library(readxl)
+library(gt)
+dir.create("data")
+```
+
+## Data
+
+We download the DB-PAME from the from [the protected planet portal](https://pame.protectedplanet.net/). It is the version updated in February 2022.
+
+```{r}
+pame_path <- "data/protectedplanet-pame-2023-FEB.csv"
+if(!file.exists(pame_path)) {
+  # Doesn not work, must be manual
+  from = "https://www.protectedplanet.net/0e003033-2e0e-45a6-a312-2aaba2e5a3f9"
+  download.file(from, destfile = pame_path, method = "curl")
+}
+pame <- read_csv(pame_path)
+```
+
+We download the World Bank country classification from the World bank data portal. The data comes in four classes: low income countries, low medium income countries and high medium income countries. The classification is available for all years since 1989, with some countries missing
+
+```{r}
+
+oghist_path <- "data/OGHIST.xls"
+
+if (!file.exists(oghist_path)) {
+  from = "https://databankfiles.worldbank.org/public/ddpext_download/site-content/OGHIST.xls"
+  download.file(from, destfile = oghist_path, method = "curl")
+}
+
+oghist <- read_excel(oghist_path, sheet = "Country Analytical History", 
+                     skip = 5) %>%
+  rename(iso3 = 1, country_name = 2) %>%
+  filter(!is.na(iso3))
+
+missing <- oghist %>%
+  pivot_longer(cols = matches("[0-9]{4}"), names_to = "year", values_to = "cat") %>%
+  mutate(cat = ifelse(cat == "LM*", "LM", 
+                      ifelse(cat == "..", NA, cat)))
+test <- missing %>%
+  group_by(year) %>%
+  summarise(n = n(),
+            na = sum(is.na(cat)),
+            perc_na = round(na / n * 100, 2))
+```
+
+Status is missing for about a fourth of the countries at the beginning of the period (in particular countries from the ex soviet block). It is missing for less than 10 countries (\<4%) since 2010.
+
+## Type of eval by country categories
+
+We summarise the PAME production by income category of countries and by group of methods.
+
+```{r}
+#| label: tab-pame-method
+#| tbl-cap: Prevalance of METT and RAPAM in PAME
+
+# Include World Bank classification in PAME
+pame <- pame %>%
+  left_join(select(oghist, iso3, cat_wb = `2021`), by = "iso3") %>%
+  mutate(method = ifelse(str_detect(methodology, "(METT)|(RAPPAM)"),
+                         "METT or RAPPAM", "Other"))
+  
+method_top10 <- pame %>%
+  filter(cat_wb %in% c("L", "LM")) %>%
+  group_by(methodology) %>%
+  summarise(n = n()) %>%
+  arrange(desc(n)) %>%
+  head(10) %>%
+  pluck("methodology")
+
+# Summarise by method types
+
+l_lm_um <- pame %>%
+  filter(!is.na(cat_wb) & cat_wb != "H") %>% 
+  group_by(cat_wb) %>%
+  summarise(`Number of countries` = n_distinct(iso3),
+            `Total number of assessments` = n(),
+            `METT or RAPPAM (%)` = round(mean(method == "METT or RAPPAM") * 100, 2),
+            `Other methods (%)` = round(mean(method == "Other") * 100, 2)) %>%
+  rename(`County income category` = cat_wb)
+
+lmic_hi <- pame %>%
+  filter(!is.na(cat_wb)) %>% 
+  mutate(cat_wb2 = ifelse(cat_wb == "H", "H", 
+                          "LMIC")) %>%
+  group_by(cat_wb2) %>%
+  summarise(`Number of countries` = n_distinct(iso3),
+            `Total number of assessments` = n(),
+            `METT or RAPPAM (%)` = round(mean(method == "METT or RAPPAM") * 100, 2),
+            `Other methods (%)` = round(mean(method == "Other") * 100, 2)) %>%
+  rename(`County income category` = cat_wb2)
+  
+all <- bind_rows(l_lm_um, lmic_hi) %>%
+  arrange(factor(`County income category`, levels = c("L", "LM", "UM", "LMIC", "H"))) %>% 
+  mutate(`County income category` = case_when(
+    `County income category` == "L" ~ "Low income",
+    `County income category` == "LM" ~ "Lower middle income",
+    `County income category` == "UM" ~ "Upper middle income",
+    `County income category` == "LMIC" ~ "All low and middle income income",
+    `County income category` == "H" ~ "Low income"))
+
+gt(all)
+
+```
+
+From the results above, we can conclude that most of PAME registered in the DB-PAME occured in high income countries. We can also observe that METT and RAPPAM methods are dominant in LMIC, while they remain very marginal in developping countries.
+
+## References
